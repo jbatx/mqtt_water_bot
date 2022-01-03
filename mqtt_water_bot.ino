@@ -12,24 +12,25 @@
  
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
  
-const char *ssid = "Satau";     // replace with your wifi ssid and wpa2 key
-const char *password = "losthorizontx";
+const char *ssid = "smartypants";     // replace with your wifi ssid and wpa2 key
+const char *password = "123123123";
 
 // AWS IoT Core params
 #define CLIENT_ID "water_bot" // thing unique ID, this id should be unique among all things associated with your AWS account.
 #define MQTT_TOPIC "$aws/things/water_bot/shadow/update" //topic for the MQTT data
-#define AWS_HOST "asdasda-ats.iot.us-east-2.amazonaws.com" // your host for uploading data to AWS,
+#define AWS_HOST "123123123-ats.iot.us-east-2.amazonaws.com" // your host for uploading data to AWS,
 
 AWS_IOT aws;
 
 #define LED_BUILTIN 16
-#define SENSOR  36 //2
+#define SENSOR  15 //2
  
 long currentMillis = 0;
 long previousMillis = 0;
+long previousHeartBeat = 0;
 int interval = 1000;
 boolean ledState = LOW;
-float calibrationFactor = 3.3;
+float calibrationFactor = 5.5;
 volatile byte pulseCount;
 byte pulse1Sec = 0;
 float flowRate;
@@ -37,7 +38,7 @@ unsigned long flowMilliLitres;
 unsigned int totalMilliLitres;
 float flowLitres;
 float totalLitres;
-const int relay = 26;
+const int relay = 13;
 bool waterFlowing = false;
 
 void IRAM_ATTR pulseCounter()
@@ -75,7 +76,7 @@ void setup()
 
   // Set up the display
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C); //initialize with the I2C addr 0x3C (128x64)
-  display.clearDisplay();
+  display.display();
   delay(10);
  
   // Set up the flow sensor
@@ -87,20 +88,39 @@ void setup()
   flowMilliLitres = 0;
   totalMilliLitres = 0;
   previousMillis = 0;
+  previousHeartBeat = 0;
  
   attachInterrupt(digitalPinToInterrupt(SENSOR), pulseCounter, FALLING);
 
   // Set up the relay
   pinMode(relay, OUTPUT);
+  setRelayClosed(false);
 }
  
 void loop()
 {
   
+  if(millis() > 7200000){
+    publishMqtt("{\"device_id\": \"water_bot\", \"restart\":" + (String)millis() + "}\n");
+    delay(3000);
+    ESP.restart();    
+  }
+
+
   currentMillis = millis();
+  
+  if(currentMillis - previousHeartBeat > 30000){
+      Serial.println("heartbeat");
+      publishMqtt("{\"device_id\": \"water_bot\", \"heartbeat\":" + (String)millis() + "}\n");
+      previousHeartBeat = millis();
+  }
+
+
   if (currentMillis - previousMillis > interval) 
   {
     
+    Serial.println("millis " + (String)millis());
+
     pulse1Sec = pulseCount;
     pulseCount = 0;
  
@@ -156,12 +176,12 @@ void loop()
     // open/close the relay
     if( flowRate > 0 ){
       setRelayClosed(true);
-      publishMqtt("{\"flowRate\":" + (String)flowRate + ",\"total_volume\":" + (String)totalLitres + "}\n");
+      publishMqtt("{\"device_id\": \"water_bot\", \"flowRate\":" + (String)flowRate + ",\"total_volume\":" + (String)totalLitres + "}\n");
       waterFlowing = true;
     } else {
       if( waterFlowing ){
         setRelayClosed(false);
-        publishMqtt("{\"flowRate\":" + (String)flowRate + ",\"total_volume\":" + (String)totalLitres + "}\n");
+        publishMqtt("{\"device_id\": \"water_bot\", \"flowRate\":" + (String)flowRate + ",\"total_volume\":" + (String)totalLitres + "}\n");
         waterFlowing = false;
       }
     }
@@ -170,18 +190,15 @@ void loop()
 
 void setRelayClosed(bool close){
   if(close){
-    // Normally Open configuration, send LOW signal to let current flow
-    // (if you're usong Normally Closed configuration send HIGH signal)
-    digitalWrite(relay, LOW);
+    digitalWrite(relay, HIGH);
     Serial.println("Current Flowing");
-    publishMqtt("{\"uv_status\":1}\n");
+    publishMqtt("{\"device_id\": \"water_bot\", \"uv_status\":1}\n");
 
   } else {
-    // Normally Open configuration, send HIGH signal stop current flow
-    // (if you're usong Normally Closed configuration send LOW signal)
-    digitalWrite(relay, HIGH);
     Serial.println("Current not Flowing");
-    publishMqtt("{\"uv_status\":0}\n");
+    publishMqtt("{\"device_id\": \"water_bot\", \"uv_status\":0}\n");
+    delay(3000);
+    digitalWrite(relay, LOW);
   }
 }
 
